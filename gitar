@@ -64,7 +64,6 @@ UPDATE_USAGE
 
 fetch_one() {
 	name="$1"
-	echo $name
 	[[ -f "$GITARSDIR/$name" ]] || return error \
 		"no such repository: $1"
 
