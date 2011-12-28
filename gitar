@@ -87,7 +87,7 @@ fetch_one() {
 	[[ -d "$symlink" ]] || ln -s "$target" "$symlink"
 
 	cd "$target"
-	git checkout "origin/$BRANCH" -b "$BRANCH"
+	[[ ! -z "$BRANCH" ]] && git checkout "origin/$BRANCH" -b "$BRANCH"
 	git reset --hard HEAD
 }
 
@@ -161,7 +161,7 @@ HELP_BLOCK
 EXECUTABLE=$0
 COMMANDLIST="init add fetch update foreach help"
 COMMAND=${1:-nocommand}
-read BRANCH <$CONFIGFILE
+[[ -f $CONFIGFILE ]] && read BRANCH <$CONFIGFILE
 
 if [[ "$COMMAND" == 'nocommand' ]]; then
 	help
