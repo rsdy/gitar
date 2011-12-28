@@ -147,6 +147,9 @@ help() {
 	cat <<HELP_BLOCK
 $0: git based project management
 
+To get information on the usage of a command, use
+	$0 command (-h|--help)
+
 Available commands are:
 HELP_BLOCK
 
