@@ -1,0 +1,176 @@
+#!/usr/bin/env ksh
+#
+# gitar -- git based project management tool
+#
+# Copyright (C) 2011 Peter Parkanyi <me@rhapsodhy.hu>
+#
+GITARSDIR=".gitars"
+CONFIGDIR="${HOME}/.config/gitar/"
+CONFIGFILE="${CONFIGDIR}/config"
+
+init() {
+	git init
+	mkdir $GITARSDIR
+	touch $GITARSDIR/.dir
+	touch .gitignore
+	git add $GITARSDIR/.dir
+	git add .gitignore
+	git commit -m 'initial commit'
+}
+
+add() {
+	(should_help $@ || no_args 2 $@) && return usage <<ADD_USAGE
+	add <name> [target_location] <repo1> [repo2] [repo3] [repo...]
+
+	Add a new repository to the distribution.
+
+	target_location -- may only be given when creating a new repository
+	repoX           -- the URL of the repository to clone (repo1) and the rest to maintain (repo(X>1))
+ADD_USAGE
+
+	name="$1"
+	shift
+	touch "$GITARSDIR/$name"
+	echo "$@" |tr ' ' '\n' >> "$GITARSDIR/$name"
+
+	ls -1 $GITARSDIR |sed 's;^;/;' >.gitignore #TODO: disable for the user to edit the gitignore. dirty, this is bad.
+
+	git add .gitignore
+	git add "$GITARSDIR/$name"
+	git commit -m "added $name repository located at $1"
+}
+
+fetch() {
+	should_help $@ && return usage <<FETCH_USAGE
+		fetch <name>
+
+		Fetch the named repository
+FETCH_USAGE
+
+	no_args 1 $@ && foreach "fetch_one \$repo" && return 0 || return 1
+	fetch_one $1
+}
+
+update () {
+	should_help $@ && return usage <<UPDATE_USAGE
+		update [name]
+
+		Update named repository or all if none given
+UPDATE_USAGE
+
+	no_args 1 $@ && foreach "update_one $@"
+	update_one $1
+}
+
+fetch_one() {
+	name="$1"
+	echo $name
+	[[ -f "$GITARSDIR/$name" ]] || return error \
+		"no such repository: $1"
+
+	target="$(get_line_from_repofile 1 $name)"
+	source="$(get_line_from_repofile 2 $name)"
+	tmp_target=".tmp_$name"
+	[[ -z "$source" || -z "$target" ]] && return error \
+		"invalid configuration: $name"
+
+	[[ -d "$target/.git" ]] && return error \
+		"$target directory is already a git repository. Skipping."
+
+	mkdir "$tmp_target"
+	git clone --no-checkout "$source" "$tmp_target"
+	mkdir -p "$target"
+	mv "$tmp_target/.git" "$target"
+	rm -rf "$tmp_target"
+
+	symlink="$name"
+	[[ -d "$symlink" ]] || ln -s "$target" "$symlink"
+
+	cd "$target"
+	git checkout "origin/$BRANCH" -b "$BRANCH"
+	git reset --hard HEAD
+}
+
+update_one() {
+	name="$1"
+	target="$(get_line_from_repofile 1 $name)"
+	[[ -z "$target" ]] && return error \
+		"The requested repository does not exist: $name"
+
+	cd $target
+	git pull
+}
+
+foreach() {
+	no_args 1 $@ && return usage <<FOREACH_USAGE
+		foreach <command>
+
+		Execute the given command in all the repositories.
+FOREACH_USAGE
+
+	for repo in $GITARSDIR/*; do
+		repo=$(basename "$repo")
+		echo "processing $repo..."
+		(eval "$1")
+	done
+}
+
+no_args() {
+	count=$1
+	shift
+	[[ ${#@} < $count ]]
+}
+
+should_help() {
+	for opt in $@; do
+		[[ "$opt" == "--help" || "$opt" == "-h" ]] && return 0;
+	done
+
+	return 1
+}
+
+get_line_from_repofile() {
+	sed -n $1p "$GITARSDIR/$2" 2>/dev/null
+}
+
+error() {
+	echo "fatal error: $1"
+	return ${2:2}
+}
+
+usage() {
+	echo "usage: $EXECUTABLE $1"
+	return ${2:1}
+}
+
+help() {
+	cat <<HELP_BLOCK
+$0: git based project management
+
+Available commands are:
+HELP_BLOCK
+
+	for i in $COMMANDLIST; do echo -e "\t$i"; done
+}
+
+#
+# main()
+EXECUTABLE=$0
+COMMANDLIST="init add fetch update foreach help"
+COMMAND=${1:-nocommand}
+read BRANCH <$CONFIGFILE
+
+if [[ "$COMMAND" == 'nocommand' ]]; then
+	help
+	RETCODE=1
+elif [[ ${COMMANDLIST/*${COMMAND}*/1} != '1' ]]; then
+	echo "$0: command '$COMMAND' not found"
+	help
+	RETCODE=1
+else
+	shift
+	eval "$COMMAND $@"
+	RETCODE=$?
+fi
+
+exit ${RETCODE:-0}
